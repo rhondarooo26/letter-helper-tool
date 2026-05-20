@@ -450,12 +450,14 @@ const progressByStep = { 1: 10, 2: 45, 3: 72, 4: 100 };
 // ─────────────────────────────────────────
 //  RENDER ENGINE
 // ─────────────────────────────────────────
-function render() {
+function render(scrollToTop = false) {
     document.getElementById('progressFill').style.width = progressByStep[state.step] + '%';
     const app = document.getElementById('app');
     app.innerHTML = '';
     void app.offsetWidth; // reflow for animation
     app.classList.add('fade-in');
+    // Only scroll to top on step changes, not card selection
+    if (scrollToTop) requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
 
     if      (state.step === 1) renderStep1(app);
     else if (state.step === 2) renderStep2(app);
@@ -600,9 +602,12 @@ function renderStep4Result(el, content, isPrompt) {
             <div class="result-content" id="resultContent">${content}</div>
             <div class="btn-row">
                 <button class="btn btn-new" onclick="restart()">← Write Another Letter</button>
-                <button class="btn btn-copy" id="copyBtn" onclick="copyResult()">
-                    📋 Copy ${isPrompt ? 'Prompt' : 'Letter'}
-                </button>
+                <div style="display:flex;gap:0.7rem;flex-wrap:wrap;justify-content:flex-end;">
+                    ${!isPrompt ? `<button class="btn btn-back" onclick="regenerate()" style="border-color:var(--navy);color:var(--navy);">🔄 Regenerate</button>` : ''}
+                    <button class="btn btn-copy" id="copyBtn" onclick="copyResult()">
+                        📋 Copy ${isPrompt ? 'Prompt' : 'Letter'}
+                    </button>
+                </div>
             </div>
         </div>`;
 }
@@ -613,27 +618,43 @@ function renderStep4Result(el, content, isPrompt) {
 function selectType(id) {
     if (state.letterType !== id) state.fields = {};
     state.letterType = id;
-    render();
+    render(false); // don't scroll to top when selecting a card
 }
 
 function save(id, val) { state.fields[id] = val; }
 
 function selectMode(m) { state.outputMode = m; render(); }
 
-function toStep2() { if (state.letterType) { state.step = 2; render(); } }
+function toStep2() { if (state.letterType) { state.step = 2; render(true); } }
 
-function toStep3() { state.step = 3; render(); }
+function toStep3() { state.step = 3; render(true); }
 
-function back() { state.step--; render(); }
+function back() { state.step--; render(true); }
 
 function restart() {
     Object.assign(state, { step:1, letterType:null, fields:{}, outputMode:null });
-    render();
+    render(true);
+}
+
+async function regenerate() {
+    // Keep all state but re-run generation
+    state.step = 4;
+    render(); // show loading
+    try {
+        const letter = await callAPI();
+        renderStep4Result(document.getElementById('app'), letter, false);
+    } catch(e) {
+        renderStep4Result(document.getElementById('app'),
+            'Sorry, there was a problem generating your letter.
+
+Tip: Try the "Give Me a Prompt" option — it works without an internet connection to our AI service, and you can paste the prompt into ChatGPT or Claude directly.',
+            false);
+    }
 }
 
 async function generate() {
     state.step = 4;
-    render(); // show loading
+    render(true); // show loading, scroll to top
 
     if (state.outputMode === 'prompt') {
         const prompt = buildPrompt();
